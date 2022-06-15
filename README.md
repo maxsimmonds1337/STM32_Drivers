@@ -153,7 +153,50 @@ Lastly, everytime the system clock is changed, the following function must be ca
 
 ### Outputting Clocks to GPIO
 
-Whilst setting up the PLL clock, it was important to see if what I was setting up was indeed working. There are two pins on the STM32f411RE that can be used to output clocks; PA8 and PC9, or MCO1 and MCO2 respectively.
+Whilst setting up the PLL clock, it was important to see if what I was setting up was indeed working. There are two pins on the STM32f411RE that can be used to output clocks; PA8 and PC9, or MCO1 and MCO2 respectively. To find what pins have this alternate function, look at the datasheet and search for "MCO". Table 9 (Alternate function mapping) in the datasheet for this IC shows that MC0 is on pin PA8 (or D7 on the Nucleo board) and is AF 0000. Likewise, MCO2 is PC9 (or pin 1 of CN10) and is also AF 0000.
+
+The process for setting this up is also follows:
+
+![image](https://user-images.githubusercontent.com/58208872/173802299-b7c32e2d-09e8-476a-ba68-2cc63ec1cef8.png)
+
+
+1) Set which clock you would like outputting on the MCO pin. Refer to the above image for which pins can be used for which pin. The maximum speed that can be outputted to a IO is 100MHz (the max I/O speed)
+2) Set the prescaler should you need to, this is useful when the scope that you are using to probe it (or device you'd like to run) doesn't have the bandwidth. In my example, I use a prescaler of 5 to get a 10MHz output.
+3) Turn on the GPIO clock for the relevant port
+4) Set the particular pin (PA8 or PC9) as an alternate function, using the MODER register (GPIOx->MODER)
+5) Set the function number (in this case, 0000) in the alternate function register.
+
+Page 106 of the reference manual shows what bits the MCOx registers should be set to for different clocks. They are:
+
+| MCOx | Register | Clock Source |
+|------|----------|--------------|
+|  0   | 00       | System clock |
+|  0   | 01       | PLLI2S       |
+|  0   | 10       | HSE          |
+|  0   | 11       | PLL          |
+|      |          |              |
+|  1   | 00       | HSI 	 |
+|  1   | 01       | LSE		 |
+|  1   | 10       | HSE          |
+|  1   | 11       | PLL          |
+ 
+
+Programmatically, this looks like the below:
+
+```C
+//This section turns on the GPIO PC9 to be able to see the PPL clock
+RCC->CFGR |= RCC_CFGR_MCO2; // outputs the system clock
+RCC->CFGR |= RCC_CFGR_MCO2PRE_Msk; //sets the prescale to 5
+RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; // enable the GPIO C clock
+GPIOC->MODER |= GPIO_MODER_MODE9_1;// Set pin 9 (PC9, or MCO2) to alternate function. This is for outputting a clock source (2^1 = 2 (0b10))
+GPIOC->AFR[1] |= GPIO_AF0_MCO << GPIO_AFRH_AFSEL9_Pos; // set the pin to AF0, which is MCO (microcontroller output 1)
+ 
+//This section turns on the GPIO PA8 to be able to see the PPL clock
+RCC->CFGR |= RCC_CFGR_MCO1_Msk; // outputs the PLL clock (enabled by default)
+RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN; // enable the GPIO A clock
+GPIOA->MODER |= GPIO_MODER_MODE8_1;// Set pin 8 (PA8, or MCO1) to alternate function. This is for outputting a clock source (2^1 = 2 (0b10))
+GPIOA->AFR[1] |= GPIO_AF0_MCO << GPIO_AFRH_AFSEL8_Pos; // set the pin to AF0, which is MCO (microcontroller output 1)	
+```
 
 ### Timers for IO output
 
