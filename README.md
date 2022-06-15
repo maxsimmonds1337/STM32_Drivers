@@ -1,5 +1,7 @@
 # STM32_Drivers
 
+[Reference Manual](https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=106&zoom=100,89,117)
+
 ## Timer Setup
 
 ### Timers for interrupts
@@ -68,6 +70,90 @@ TIM3->SR = 0;		// clear the status reg
 
 }
 ```
+
+### Phase Locked Loop (PLL)
+
+![image](https://user-images.githubusercontent.com/58208872/173787454-10bbb6bc-025a-4f46-9742-dcd64e5b005b.png)
+
+
+The PPL on the STM32 can take several inputs, the HSI or HSE. For this application, I've used the HSI, a 16MHz clock. The process for increasing the PLL clock is as follows:
+
+1) Check which speed you would like to obtain, I have chosen 50Mhz.
+2) ![image](https://user-images.githubusercontent.com/58208872/173788120-89ac3783-7c0a-490c-a66a-0da2ec4722ee.png)
+3) Look at the table in 2), and see how many wait states (WS) are required for the flash memory reading. In the case of a 50Mhz and a voltage range of 2.7 V - 3.6 V, then a single WS is needed.
+4) Set the wait state register
+5) Configure the M,N, and P registers (these have rules that must be followed)
+6) Turn on the PLL clock, and wait for it to come online
+7) Change the switch to allow the PLL clock through, wait for it to come online
+8) execute SystemCoreClockUpdate()
+
+In order to determine what values of N,M, and P to use, the following must be done (found on page 104 of the ref manual) :
+
+$$ f_{VcoClock} = f_{PllClockIn} \cdot \frac{PLLN}{PLLM} $$
+
+$$ f_{PllGeneralClockOutput} = \frac{f_{VcoClock}}{PLLP} $$
+
+Since I won't be using the USB OTG clock, I will ignore it's equation.
+
+The following must be adheared to when setting the PLL:
+
+$$ 100MHz \ge f_{VcoClock} \le 432MHz $$
+$$ 50 \ge PLLN \le 432 $$
+$$ 1MHz \ge f_{VcoInputClock} \le 2MHz $$ (2MHz recommended to reduce jitter)
+$$ 2 \ge PLLM \le 63 $$
+$$ PLLP = 2,4,6,8 $$
+
+Therefore, in order to get 50MHz out (with an input of 16MHz), the following numbers are proposed:
+
+* PLLM = 8
+* PLLN = 50
+* PLLP = 2
+
+That gives a VCO clock input of 16MHz / 8 = 2MHz, the recommended frequency. An N value of 50 brings the VCO clock output to 100MHz, within the required range. Finally, a P value of 2 drops the PLL clock output to 50MHz, within the range requried for a single wait state.
+
+These parameters are written to the PLL configuration registers within the Reset and Clock Control register (RCC), namley, RCC->PLLCFGR.  Programmatically, the above looks like:
+
+```C
+//First step is to set the wait states, for anything less than 64MHz, but greater than 30, 1 wait state is needed
+FLASH->ACR |= FLASH_ACR_LATENCY_1WS; // this adds one Wait State (WS)
+	
+RCC->PLLCFGR &= ~(RCC_PLLCFGR_PLLM); // reset the register
+RCC->PLLCFGR &= ~(RCC_PLLCFGR_PLLN); // reset the register
+RCC->PLLCFGR &= ~(RCC_PLLCFGR_PLLP); // reset the register
+
+RCC->PLLCFGR |= RCC_PLLCFGR_PLLM_3; // sets PLLM to 8 (2^3 = 8)
+RCC->PLLCFGR |= RCC_PLLCFGR_PLLN_1 | RCC_PLLCFGR_PLLN_4 | RCC_PLLCFGR_PLLN_5; // sets PLLN to 50 (2^1 OR 2^4 OR 2^5, 2+16+32)
+RCC->PLLCFGR |= RCC_PLLCFGR_PLLP_1; // sets PLLP to 2 (2^1)
+```
+
+Finally, the PLL clock now needs to be turned on (it cannot be enabled until the PLL configuration is complete). This is done in the RCC->CR register. The PLLON bit is set, and the PLLRDY bit is polled until high:
+
+```C
+//turn on PLL
+RCC->CR |= RCC_CR_PLLON; 
+while (!(RCC->CR & RCC_CR_PLLRDY)) ;  // wait for the pll ready flag
+```
+
+Ideally, there should be some error handler within the loop, to count the number of itterations and break out if nothing happens after a while.
+
+Lastly, the switch (labelled SW in the clock tree diagram) needs to be setup up so that the SYSCLOCK becomes the PLL. This is done by setting the SW bits within the RCC configuration register (RCC->CFGR). Again, there should be code to wait for this switch to settle, which is done by polling the SW status bits:
+
+```C
+//Set the SW state to PLL
+	
+RCC->CFGR |= RCC_CFGR_SW_PLL; //sets the SW mux to use PLL
+while (!(RCC->CFGR & RCC_CFGR_SWS_PLL)) ; // wait for the PLL to be ready
+```	
+
+Lastly, everytime the system clock is changed, the following function must be called:
+
+```C
+	SystemCoreClockUpdate();  // needs to be run once the clocks are updated
+```
+
+### Outputting Clocks to GPIO
+
+Whilst setting up the PLL clock, it was important to see if what I was setting up was indeed working. There are two pins on the STM32f411RE that can be used to output clocks; PA8 and PC9, or MCO1 and MCO2 respectively.
 
 ### Timers for IO output
 
