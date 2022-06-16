@@ -105,11 +105,11 @@ $$ PLLP = 2,4,6,8 $$
 
 Therefore, in order to get 50MHz out (with an input of 16MHz), the following numbers are proposed:
 
-* PLLM = 8
+* PLLM = 2
 * PLLN = 50
-* PLLP = 2
+* PLLP = 8
 
-That gives a VCO clock input of 16MHz / 8 = 2MHz, the recommended frequency. An N value of 50 brings the VCO clock output to 100MHz, within the required range. Finally, a P value of 2 drops the PLL clock output to 50MHz, within the range requried for a single wait state.
+That gives a VCO clock input of 16MHz / 2 = 8MHz, not the recommended frequency but it works. An N value of 50 brings the VCO clock output to 100MHz, within the required range. Finally, a P value of 8 drops the PLL clock output to 50MHz, within the range requried for a single wait state.
 
 These parameters are written to the PLL configuration registers within the Reset and Clock Control register (RCC), namley, RCC->PLLCFGR.  Programmatically, the above looks like:
 
