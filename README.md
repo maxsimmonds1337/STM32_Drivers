@@ -2,6 +2,8 @@
 
 [Reference Manual](https://www.st.com/resource/en/reference_manual/rm0383-stm32f411xce-advanced-armbased-32bit-mcus-stmicroelectronics.pdf#page=106&zoom=100,89,117)
 
+[Nucleo FR411RE Pinout](https://os.mbed.com/platforms/ST-Nucleo-F411RE/)
+
 ## Timer Setup
 
 ### Timers for interrupts
@@ -197,6 +199,28 @@ RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN; // enable the GPIO A clock
 GPIOA->MODER |= GPIO_MODER_MODE8_1;// Set pin 8 (PA8, or MCO1) to alternate function. This is for outputting a clock source (2^1 = 2 (0b10))
 GPIOA->AFR[1] |= GPIO_AF0_MCO << GPIO_AFRH_AFSEL8_Pos; // set the pin to AF0, which is MCO (microcontroller output 1)	
 ```
+
+### Timers for PWM outputs
+
+The steps are as follows:
+
+![image](https://user-images.githubusercontent.com/58208872/174078586-f59747f1-4a6c-4218-8de0-7fd2f8093e14.png)
+
+* Enable the timer's clock in the APB1ENR - we know that it's on the APB1 bus because of the block diagram (shown above) in the datasheet
+* Decide which pin/channel you want to output the PWM to, check the alternate mapping table in the datasheet. In this example, I'm using TIM1 (advanced timer with PWM capabilities) and channel 1, which means I need pin PA8.
+* Enable the clock of the GPIO bank that you're using (GPIOA)
+* Disable the clock (t's off by default, but just to be sure)
+* Set the autoreload register of the timer, this value is chosen knowing the input clock speed (this comes from looking at the clock tree diagram *NOTE: to change the APB prescaler, change the PPREx bits in the RCC->CFGR)
+* The autoreload register is set by $$ ARR = \frac{f_{in}}{f_{cl}}. In our case, with a 50MHz clock and a switching frequency of 100K, ARR = 500. 
+![image](https://user-images.githubusercontent.com/58208872/174089878-b5411cdf-4d47-4500-8fe0-b80b7c5df2dd.png)
+* Referring to the above image, it can be seen that set the output capture compare mode of the timer (this mode is for outputting things, rather than taking an input, like clock counting). To enable this, 110 is written to the OC1M bits in the TIMx_CCMR1 register
+* Set the capture compare register (TIM1->CCR1) to a value less than the ARR - this sets the duty cycle
+* Now the capture/compare mode needs to be enabled, this is done in the TIM1_CCER. It can be set by TIM1->CCER |= TIM_CCER_CC1E.
+* Now set the output pin (PA8) to alternate function
+* set the alternate fuction register to the appropriate number (in our case, it's 0001)
+* For some reason, TIM1 and and 8 have a Main Output Enable (MOE) pin, this is set in the Break and Deadtime Register BDTR
+
+
 
 ### Timers for IO output
 
